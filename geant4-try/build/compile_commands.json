@@ -1,0 +1,7 @@
+[
+{
+  "directory": "/home/andres/cubesat/geant4-try/build",
+  "command": "/usr/bin/c++ -DG4LIB_BUILD_DLL -DG4UI_USE_QT -DG4VIS_USE_RAYTRACERX -DG4VIS_USE_TOOLSSG_QT_GLES -DG4VIS_USE_TOOLSSG_QT_ZB -DG4VIS_USE_TOOLSSG_X11_GLES -DPTL_BUILD_DLL -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -isystem /home/andres/anaconda3/envs/cubesat/include/Geant4 -isystem /home/andres/anaconda3/envs/cubesat/include -isystem /home/andres/anaconda3/envs/cubesat/include/freetype2 -isystem /home/andres/anaconda3/envs/cubesat/include/qt -isystem /home/andres/anaconda3/envs/cubesat/include/qt/QtCore -isystem /home/andres/anaconda3/envs/cubesat/./mkspecs/linux-g++ -isystem /home/andres/anaconda3/envs/cubesat/include/qt/QtGui -isystem /home/andres/anaconda3/envs/cubesat/include/qt/QtWidgets -fPIC -o CMakeFiles/myApp.dir/src/main.cpp.o -c /home/andres/cubesat/geant4-try/src/main.cpp",
+  "file": "/home/andres/cubesat/geant4-try/src/main.cpp"
+}
+]
