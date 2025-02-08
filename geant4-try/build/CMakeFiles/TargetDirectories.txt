@@ -1,3 +1,0 @@
-/home/andres/everything/CubeSat-CRD/geant4-try/build/CMakeFiles/myApp.dir
-/home/andres/everything/CubeSat-CRD/geant4-try/build/CMakeFiles/edit_cache.dir
-/home/andres/everything/CubeSat-CRD/geant4-try/build/CMakeFiles/rebuild_cache.dir

@@ -1,5 +1,4 @@
 file(REMOVE_RECURSE
-  "CMakeFiles/exampleB1.dir/link.d"
   "CMakeFiles/exampleB1.dir/exampleB1.cc.o"
   "CMakeFiles/exampleB1.dir/exampleB1.cc.o.d"
   "CMakeFiles/exampleB1.dir/src/ActionInitialization.cc.o"
