@@ -29,7 +29,8 @@
 
 #include "ActionInitialization.hh"
 #include "DetectorConstruction.hh"
-#include "QBBC.hh"
+#include "FTFP_BERT_ATL.hh"
+#include "G4OpticalPhysics.hh"
 
 #include "G4RunManagerFactory.hh"
 #include "G4SteppingVerbose.hh"
@@ -68,7 +69,9 @@ int main(int argc, char** argv)
   runManager->SetUserInitialization(new DetectorConstruction());
 
   // Physics list
-  auto physicsList = new QBBC;
+  auto physicsList = new FTFP_BERT_ATL;
+  auto opticalPhysics = new G4OpticalPhysics;
+  physicsList->RegisterPhysics(opticalPhysics);
   physicsList->SetVerboseLevel(1);
   runManager->SetUserInitialization(physicsList);
 
