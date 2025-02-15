@@ -36,6 +36,7 @@
 #include "G4ParticleTable.hh"
 #include "G4SystemOfUnits.hh"
 #include "Randomize.hh"
+#include <CLHEP/Units/SystemOfUnits.h>
 #include <G4ThreeVector.hh>
 #include <G4Types.hh>
 
@@ -69,13 +70,13 @@ G4float RandomProtonEnergy()
   return energy;
 }
 
-G4ThreeVector RandomUnitSpherePoint()
+G4ThreeVector RandomUnitSpherePoint(G4float theta_t_lo, G4float theta_t_hi, G4float phi_lo, G4float phi_hi)
 {
   // random number from 0 to 2pi
-  G4float random_phi = G4UniformRand() * 2 * CLHEP::pi;
+  G4float random_phi = G4UniformRand() * (phi_hi - phi_lo) + phi_lo;
 
   // random number from -1 to 1
-  G4float theta_input_rand = G4UniformRand() * 2 - 1;
+  G4float theta_input_rand = G4UniformRand() * (theta_t_hi - theta_t_lo) + theta_t_lo;
 
   // maps theta so that we get uniform points on a sphere
   G4float random_theta = acos(theta_input_rand);
@@ -86,6 +87,19 @@ G4ThreeVector RandomUnitSpherePoint()
     cos(random_theta)
   ); // want vector to point in
   return r;
+}
+
+G4ThreeVector RandomUnitSpherePoint()
+{
+  return RandomUnitSpherePoint(-1.0, 1.0, 0.0, 2 * CLHEP::pi);
+}
+
+G4ThreeVector RandomVectorNudge(G4ThreeVector v, G4float mag)
+{
+  G4ThreeVector random_nudge = RandomUnitSpherePoint() * mag;
+  G4ThreeVector nudged_vector = v + random_nudge;
+  nudged_vector = nudged_vector.unit() * v.mag();
+  return nudged_vector;
 }
 
 PrimaryGeneratorAction::PrimaryGeneratorAction()
@@ -142,7 +156,7 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event)
 
   fParticleGun->SetParticlePosition(r);
   fParticleGun->SetParticleEnergy(RandomProtonEnergy() * MeV);
-  fParticleGun->SetParticleMomentumDirection(-r);
+  fParticleGun->SetParticleMomentumDirection(RandomVectorNudge(-r, 0.1));
 
   fParticleGun->GeneratePrimaryVertex(event);
 
