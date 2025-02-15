@@ -36,6 +36,8 @@
 #include "G4ParticleTable.hh"
 #include "G4SystemOfUnits.hh"
 #include "Randomize.hh"
+#include <G4ThreeVector.hh>
+#include <G4Types.hh>
 
 namespace B1
 {
@@ -67,6 +69,25 @@ G4float RandomProtonEnergy()
   return energy;
 }
 
+G4ThreeVector RandomUnitSpherePoint()
+{
+  // random number from 0 to 2pi
+  G4float random_phi = G4UniformRand() * 2 * CLHEP::pi;
+
+  // random number from -1 to 1
+  G4float theta_input_rand = G4UniformRand() * 2 - 1;
+
+  // maps theta so that we get uniform points on a sphere
+  G4float random_theta = acos(theta_input_rand);
+
+  G4ThreeVector r = G4ThreeVector(
+    sin(random_theta) * cos(random_phi),
+    sin(random_theta) * sin(random_phi),
+    cos(random_theta)
+  ); // want vector to point in
+  return r;
+}
+
 PrimaryGeneratorAction::PrimaryGeneratorAction()
 {
   G4int n_particle = 1;
@@ -77,7 +98,6 @@ PrimaryGeneratorAction::PrimaryGeneratorAction()
   G4String particleName;
   G4ParticleDefinition* particle = particleTable->FindParticle(particleName = "proton");
   fParticleGun->SetParticleDefinition(particle);
-  fParticleGun->SetParticleMomentumDirection(G4ThreeVector(0., 0., -1.));
 }
 
 //....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
@@ -91,7 +111,7 @@ PrimaryGeneratorAction::~PrimaryGeneratorAction()
 
 void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event)
 {
-  // this function is called at the begining of ecah event
+  // this function is called at the begining of each event
   //
 
   // In order to avoid dependence of PrimaryGeneratorAction
@@ -118,13 +138,11 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event)
     G4Exception("PrimaryGeneratorAction::GeneratePrimaries()", "MyCode0002", JustWarning, msg);
   }
 
-  G4double size = 0.8;
-  G4double x0 = size * envSizeXY * (G4UniformRand() - 0.5);
-  G4double y0 = size * envSizeXY * (G4UniformRand() - 0.5);
-  G4double z0 = 0.5 * envSizeZ;
+  G4ThreeVector r = RandomUnitSpherePoint();
 
-  fParticleGun->SetParticlePosition(G4ThreeVector(x0, y0, z0));
+  fParticleGun->SetParticlePosition(r);
   fParticleGun->SetParticleEnergy(RandomProtonEnergy() * MeV);
+  fParticleGun->SetParticleMomentumDirection(-r);
 
   fParticleGun->GeneratePrimaryVertex(event);
 
