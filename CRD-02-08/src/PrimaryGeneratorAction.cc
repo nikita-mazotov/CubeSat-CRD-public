@@ -100,8 +100,6 @@ G4ThreeVector RandomVectorNudge(G4ThreeVector v, G4float mag)
   G4ThreeVector random_nudge = RandomUnitSpherePoint() * v.mag() * mag;
   G4ThreeVector nudged_vector = v + random_nudge;
   nudged_vector = nudged_vector.unit() * v.mag();
-  G4double angle = nudged_vector.angle(v);
-  G4cout << "Angle between vectors: " << angle / CLHEP::deg << " degrees" << G4endl;
   return nudged_vector;
 }
 
