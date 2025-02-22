@@ -36,6 +36,10 @@
 #include "G4ParticleTable.hh"
 #include "G4SystemOfUnits.hh"
 #include "Randomize.hh"
+#include <CLHEP/Units/SystemOfUnits.h>
+#include <G4ThreeVector.hh>
+#include <G4Types.hh>
+#include <cmath>
 
 namespace B1
 {
@@ -67,6 +71,40 @@ G4float RandomProtonEnergy()
   return energy;
 }
 
+G4ThreeVector RandomUnitSpherePoint(G4float theta_t_lo, G4float theta_t_hi, G4float phi_lo, G4float phi_hi)
+{
+  // random number from 0 to 2pi
+  G4float random_phi = G4UniformRand() * (phi_hi - phi_lo) + phi_lo;
+
+  // random number from -1 to 1
+  G4float theta_input_rand = G4UniformRand() * (theta_t_hi - theta_t_lo) + theta_t_lo;
+
+  // maps theta so that we get uniform points on a sphere
+  G4float random_theta = acos(theta_input_rand);
+
+  G4ThreeVector r = G4ThreeVector(
+    sin(random_theta) * cos(random_phi),
+    sin(random_theta) * sin(random_phi),
+    cos(random_theta)
+  ); // want vector to point in
+  return r;
+}
+
+G4ThreeVector RandomUnitSpherePoint()
+{
+  return RandomUnitSpherePoint(-1.0, 1.0, 0.0, 2 * CLHEP::pi);
+}
+
+G4ThreeVector RandomVectorNudge(G4ThreeVector v, G4float mag)
+{
+  G4ThreeVector random_nudge = RandomUnitSpherePoint() * v.mag() * mag;
+  G4ThreeVector nudged_vector = v + random_nudge;
+  nudged_vector = nudged_vector.unit() * v.mag();
+  G4double angle = nudged_vector.angle(v);
+  G4cout << "Angle between vectors: " << angle / CLHEP::deg << " degrees" << G4endl;
+  return nudged_vector;
+}
+
 PrimaryGeneratorAction::PrimaryGeneratorAction()
 {
   G4int n_particle = 1;
@@ -77,7 +115,6 @@ PrimaryGeneratorAction::PrimaryGeneratorAction()
   G4String particleName;
   G4ParticleDefinition* particle = particleTable->FindParticle(particleName = "proton");
   fParticleGun->SetParticleDefinition(particle);
-  fParticleGun->SetParticleMomentumDirection(G4ThreeVector(0., 0., -1.));
 }
 
 //....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
@@ -91,7 +128,7 @@ PrimaryGeneratorAction::~PrimaryGeneratorAction()
 
 void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event)
 {
-  // this function is called at the begining of ecah event
+  // this function is called at the begining of each event
   //
 
   // In order to avoid dependence of PrimaryGeneratorAction
@@ -118,13 +155,12 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event)
     G4Exception("PrimaryGeneratorAction::GeneratePrimaries()", "MyCode0002", JustWarning, msg);
   }
 
-  G4double size = 0.8;
-  G4double x0 = size * envSizeXY * (G4UniformRand() - 0.5);
-  G4double y0 = size * envSizeXY * (G4UniformRand() - 0.5);
-  G4double z0 = 0.5 * envSizeZ;
+  G4ThreeVector r = RandomUnitSpherePoint() * sqrt((envSizeXY * envSizeXY) + (envSizeZ * envSizeZ)) * 0.7;
+  G4ThreeVector v = RandomVectorNudge(-r, 0.3).unit();
 
-  fParticleGun->SetParticlePosition(G4ThreeVector(x0, y0, z0));
+  fParticleGun->SetParticlePosition(r);
   fParticleGun->SetParticleEnergy(RandomProtonEnergy() * MeV);
+  fParticleGun->SetParticleMomentumDirection(v);
 
   fParticleGun->GeneratePrimaryVertex(event);
 
