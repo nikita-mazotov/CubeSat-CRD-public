@@ -39,6 +39,7 @@
 #include <CLHEP/Units/SystemOfUnits.h>
 #include <G4ThreeVector.hh>
 #include <G4Types.hh>
+#include <cmath>
 
 namespace B1
 {
@@ -154,11 +155,12 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event)
     G4Exception("PrimaryGeneratorAction::GeneratePrimaries()", "MyCode0002", JustWarning, msg);
   }
 
-  G4ThreeVector r = RandomUnitSpherePoint();
+  G4ThreeVector r = RandomUnitSpherePoint() * sqrt((envSizeXY * envSizeXY) + (envSizeZ * envSizeZ)) * 0.7;
+  G4ThreeVector v = RandomVectorNudge(-r, 0.3).unit();
 
   fParticleGun->SetParticlePosition(r);
   fParticleGun->SetParticleEnergy(RandomProtonEnergy() * MeV);
-  fParticleGun->SetParticleMomentumDirection(RandomVectorNudge(-r, 10.0));
+  fParticleGun->SetParticleMomentumDirection(v);
 
   fParticleGun->GeneratePrimaryVertex(event);
 
