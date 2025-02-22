@@ -96,9 +96,11 @@ G4ThreeVector RandomUnitSpherePoint()
 
 G4ThreeVector RandomVectorNudge(G4ThreeVector v, G4float mag)
 {
-  G4ThreeVector random_nudge = RandomUnitSpherePoint() * mag;
+  G4ThreeVector random_nudge = RandomUnitSpherePoint() * v.mag() * mag;
   G4ThreeVector nudged_vector = v + random_nudge;
   nudged_vector = nudged_vector.unit() * v.mag();
+  G4double angle = nudged_vector.angle(v);
+  G4cout << "Angle between vectors: " << angle / CLHEP::deg << " degrees" << G4endl;
   return nudged_vector;
 }
 
@@ -156,7 +158,7 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event)
 
   fParticleGun->SetParticlePosition(r);
   fParticleGun->SetParticleEnergy(RandomProtonEnergy() * MeV);
-  fParticleGun->SetParticleMomentumDirection(RandomVectorNudge(-r, 0.1));
+  fParticleGun->SetParticleMomentumDirection(RandomVectorNudge(-r, 10.0));
 
   fParticleGun->GeneratePrimaryVertex(event);
 
