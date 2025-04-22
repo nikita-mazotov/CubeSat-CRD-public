@@ -61,7 +61,7 @@ G4float ProtonEnergyPDF(G4float energy)
 G4float RandomProtonEnergy()
 {
   G4float energy = 0;
-  const G4float max = pow(10, 6.379347596983015) * MeV;
+  const G4float max = 6.379347596983015 * MeV;
   while (true) {
     energy = G4UniformRand() * 1000 * MeV;
     if (G4UniformRand() * max < ProtonEnergyPDF(energy)) {
