@@ -36,136 +36,122 @@
 #include "G4PVPlacement.hh"
 #include "G4SystemOfUnits.hh"
 #include "G4Trd.hh"
-#include <G4ThreeVector.hh>
+#include "G4VisAttributes.hh"
+#include "G4Colour.hh"
+#include "G4ThreeVector.hh"
+#include "G4OpticalSurface.hh"
+#include "G4LogicalSkinSurface.hh"
+#include "G4LogicalBorderSurface.hh"
+#include "G4SDManager.hh"
+#include "SiPMSD.hh"
 
 namespace B1
 {
 
-//....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
-
 G4VPhysicalVolume* DetectorConstruction::Construct()
 {
-  // Get nist material manager
   G4NistManager* nist = G4NistManager::Instance();
-
-  // Envelope parameters
-  //
-  G4double env_sizeX = 25.20 * mm, env_sizeY = 25.34 * mm, env_sizeZ = 28.3 * mm;
-  G4Material* env_mat = nist->FindOrBuildMaterial("G4_Al");
-
-  // Option to switch on/off checking of volumes overlaps
-  //
   G4bool checkOverlaps = true;
 
-  //
-  // World
-  //
+  // Define envelope and world
+  G4double env_sizeX = 25.20 * mm, env_sizeY = 25.34 * mm, env_sizeZ = 28.3 * mm;
   G4double world_sizeX = 1.2 * env_sizeX;
   G4double world_sizeY = 1.2 * env_sizeY;
   G4double world_sizeZ = 1.2 * env_sizeZ;
 
-  // density given by random ESA website page
+  G4Material* env_mat = nist->FindOrBuildMaterial("G4_Al");
   G4Material* world_mat = nist->BuildMaterialWithNewDensity("Vacuum", "G4_AIR", 3.8e-12 * kg / cm3);
 
-  auto solidWorld =
-    new G4Box("World",  // its name
-              0.5 * world_sizeX, 0.5 * world_sizeY, 0.5 * world_sizeZ);  // its size
+  auto solidWorld = new G4Box("World", 0.5 * world_sizeX, 0.5 * world_sizeY, 0.5 * world_sizeZ);
+  auto logicWorld = new G4LogicalVolume(solidWorld, world_mat, "World");
+  logicWorld->SetVisAttributes(G4VisAttributes::GetInvisible());
 
-  G4LogicalVolume *logicWorld = new G4LogicalVolume(solidWorld, // its solid
-                                                    world_mat,  // its material
-                                                    "World");   // its name
+  auto physWorld = new G4PVPlacement(nullptr, G4ThreeVector(), logicWorld, "World", nullptr, false, 0, checkOverlaps);
 
-  G4PVPlacement *physWorld =
-      new G4PVPlacement(nullptr,         // no rotation
-                        G4ThreeVector(), // at (0,0,0)
-                        logicWorld,      // its logical volume
-                        "World",         // its name
-                        nullptr,         // its mother  volume
-                        false,           // no boolean operation
-                        0,               // copy number
-                        checkOverlaps);  // overlaps checking
+  // Aluminum shell
+  auto solidAlShell = new G4Box("AluminumShell", 0.5 * env_sizeX, 0.5 * env_sizeY, 0.5 * env_sizeZ);
+  auto logicAlShell = new G4LogicalVolume(solidAlShell, env_mat, "AluminumShell");
+  new G4PVPlacement(nullptr, G4ThreeVector(), logicAlShell, "AluminumShell", logicWorld, false, 0, checkOverlaps);
+  logicAlShell->SetVisAttributes(new G4VisAttributes(G4Colour(0.8, 0.8, 0.8, 0.3)));
 
-  //
-  // Envelope
-  //
-  auto solidEnv = new G4Box("Aluminum",  // its name
-                            0.5 * env_sizeX, 0.5 * env_sizeY, 0.5 * env_sizeZ);  // its size
+  // Scintillator definition
+  G4Material* scint_mat = nist->FindOrBuildMaterial("G4_PLASTIC_SC_VINYLTOLUENE");
+  G4double scint_X = env_sizeX - 14 * mm;
+  G4double scint_Y = env_sizeY - 14 * mm;
+  G4double scint_Z = env_sizeZ - 14 * mm;
 
-  auto logicEnv = new G4LogicalVolume(solidEnv,  // its solid
-                                      env_mat,  // its material
-                                      "Aluminum");  // its name
+  G4MaterialPropertiesTable* mptScint = new G4MaterialPropertiesTable();
+  const G4int nEntries = 11;
+  G4double photonEnergy[nEntries] = {
+    2.431*eV, 2.480*eV, 2.530*eV, 2.583*eV, 2.638*eV,
+    2.696*eV, 2.755*eV, 2.818*eV, 2.883*eV, 2.952*eV, 3.024*eV
+  };
+  G4double scintSpectrum[nEntries] = { 0.1, 0.2, 0.3, 0.42, 0.55, 0.7, 0.85, 1.0, 0.98, 0.7, 0.2 };
+  G4double refractiveIndex[nEntries] = { 1.58, 1.58, 1.58, 1.58, 1.58, 1.58, 1.58, 1.58, 1.58, 1.58, 1.58 };
+  G4double absLength[nEntries] = { 2*m, 2*m, 2*m, 2*m, 2*m, 2*m, 2*m, 2*m, 2*m, 2*m, 2*m };
 
-  new G4PVPlacement(nullptr,  // no rotation
-                    G4ThreeVector(),  // at (0,0,0)
-                    logicEnv,  // its logical volume
-                    "Aluminum",  // its name
-                    logicWorld,  // its mother  volume
-                    false,  // no boolean operation
-                    0,  // copy number
-                    checkOverlaps);  // overlaps checking
+  mptScint->AddProperty("SCINTILLATIONCOMPONENT1", photonEnergy, scintSpectrum, nEntries);
+  mptScint->AddConstProperty("SCINTILLATIONYIELD", 10./MeV); // 10000./MeV but 10. for testing
+  mptScint->AddConstProperty("RESOLUTIONSCALE", 1.0);
+  mptScint->AddConstProperty("SCINTILLATIONTIMECONSTANT1", 2.1*ns);
+  mptScint->AddConstProperty("SCINTILLATIONYIELD1", 1.0);
+  mptScint->AddProperty("RINDEX", photonEnergy, refractiveIndex, nEntries);
+  mptScint->AddProperty("ABSLENGTH", photonEnergy, absLength, nEntries);
+  scint_mat->SetMaterialPropertiesTable(mptScint);
 
-  //
-  // Shape 1
-  //
-  G4Material* shape1_mat = nist->FindOrBuildMaterial("G4_PLASTIC_SC_VINYLTOLUENE");
-  
-  // twice the thickness of the aluminum
-  G4float scint_X = env_sizeX - 14 * mm;
-  G4float scint_Y = env_sizeY - 14 * mm;
-  G4float scint_Z = env_sizeZ - 14 * mm;
-  auto solidShape1 = new G4Box("Plastic", scint_X * 0.5, scint_Y * 0.5, scint_Z * 0.5);
+  auto solidScint = new G4Box("Scintillator", 0.5 * scint_X, 0.5 * scint_Y, 0.5 * scint_Z);
+  auto logicScint = new G4LogicalVolume(solidScint, scint_mat, "Scintillator");
+  auto scintillatorPhys = new G4PVPlacement(nullptr, G4ThreeVector(), logicScint, "Scintillator", logicAlShell, false, 0, checkOverlaps);
+  logicScint->SetVisAttributes(new G4VisAttributes(G4Colour(1.0, 1.0, 0.0, 0.5)));
 
-  auto logicShape1 = new G4LogicalVolume(solidShape1,  // its solid
-                                         shape1_mat,  // its material
-                                         "Plastic");  // its name
+  // Reflective coating on scintillator
+  auto paintSurface = new G4OpticalSurface("ReflectivePaint");
+  paintSurface->SetType(dielectric_metal);
+  paintSurface->SetModel(unified);
+  paintSurface->SetFinish(ground);
 
-  new G4PVPlacement(nullptr,  // no rotation
-                    G4ThreeVector(),  // at position
-                    logicShape1,  // its logical volume
-                    "Plastic",  // its name
-                    logicEnv,  // its mother  volume
-                    false,  // no boolean operation
-                    0,  // copy number
-                    checkOverlaps);  // overlaps checking
+  const G4int nPaint = 2;
+  G4double energiesPaint[nPaint] = {2.0*eV, 3.5*eV};
+  G4double reflect90[nPaint] = {0.9, 0.9};
+  auto mptPaint = new G4MaterialPropertiesTable();
+  mptPaint->AddProperty("REFLECTIVITY", energiesPaint, reflect90, nPaint);
+  paintSurface->SetMaterialPropertiesTable(mptPaint);
 
-  // //
-  // // Shape 2
-  // //
-  // G4Material* shape2_mat = nist->FindOrBuildMaterial("G4_BONE_COMPACT_ICRU");
-  // G4ThreeVector pos2 = G4ThreeVector(0, -1 * cm, 7 * cm);
+  new G4LogicalSkinSurface("ScintPaintSurface", logicScint, paintSurface);
 
-  // // Trapezoid shape
-  // G4double shape2_dxa = 12 * cm, shape2_dxb = 12 * cm;
-  // G4double shape2_dya = 10 * cm, shape2_dyb = 16 * cm;
-  // G4double shape2_dz = 6 * cm;
-  // auto solidShape2 =
-  //   new G4Trd("Shape2",  // its name
-  //             0.5 * shape2_dxa, 0.5 * shape2_dxb, 0.5 * shape2_dya, 0.5 * shape2_dyb,
-  //             0.5 * shape2_dz);  // its size
+  // Detector definition
+  G4Material* detector_mat = nist->FindOrBuildMaterial("G4_SILICON_DIOXIDE");
+  G4double detector_thickness = 1.0 * mm;
+  G4double detectorSide = 7 * mm;
+  auto solidDetector = new G4Box("PhotonDetector", 0.5 * detectorSide, 0.5 * detectorSide, 0.5 * detector_thickness);
+  auto logicDetector = new G4LogicalVolume(solidDetector, detector_mat, "PhotonDetector");
+  logicDetector->SetVisAttributes(new G4VisAttributes(G4Colour(0.0, 0.0, 1.0, 0.5)));
 
-  // auto logicShape2 = new G4LogicalVolume(solidShape2,  // its solid
-  //                                        shape2_mat,  // its material
-  //                                        "Shape2");  // its name
+  auto sipmSD = new SiPMSD("SiPM_SD");
+  G4SDManager::GetSDMpointer()->AddNewDetector(sipmSD);
+  logicDetector->SetSensitiveDetector(sipmSD);
 
-  // new G4PVPlacement(nullptr,  // no rotation
-  //                   pos2,  // at position
-  //                   logicShape2,  // its logical volume
-  //                   "Shape2",  // its name
-  //                   logicEnv,  // its mother  volume
-  //                   false,  // no boolean operation
-  //                   0,  // copy number
-  //                   checkOverlaps);  // overlaps checking
+  G4double z_offset = 0.5 * scint_Z + 0.5 * detector_thickness;
+  auto detectorPhys = new G4PVPlacement(nullptr, G4ThreeVector(0, 0, z_offset), logicDetector,
+                                        "PhotonDetector", logicAlShell, false, 0, checkOverlaps);
 
-  // Set Shape2 as scoring volume
-  //
-  fScoringVolume = logicShape1;
+  // Interface between scintillator and detector
+  auto surface = new G4OpticalSurface("ScintToDetectorSurface");
+  surface->SetType(dielectric_dielectric);
+  surface->SetModel(unified);
+  surface->SetFinish(polished);
 
-  //
-  // always return the physical World
-  //
+  auto rpt = new G4MaterialPropertiesTable();
+  G4double reflectivity[nPaint] = {0.0, 0.0};
+  rpt->AddProperty("REFLECTIVITY", energiesPaint, reflectivity, nPaint);
+  surface->SetMaterialPropertiesTable(rpt);
+
+  new G4LogicalBorderSurface("ScintToDetectorBorder", scintillatorPhys, detectorPhys, surface);
+
+
+  // Set scoring volume
+  fScoringVolume = logicScint;
   return physWorld;
 }
 
-//....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
-
-}  // namespace B1
+} // namespace B1
