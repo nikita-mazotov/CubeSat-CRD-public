@@ -1,148 +1,131 @@
-//
-// ********************************************************************
-// * License and Disclaimer                                           *
-// *                                                                  *
-// * The  Geant4 software  is  copyright of the Copyright Holders  of *
-// * the Geant4 Collaboration.  It is provided  under  the terms  and *
-// * conditions of the Geant4 Software License,  included in the file *
-// * LICENSE and available at  http://cern.ch/geant4/license .  These *
-// * include a list of copyright holders.                             *
-// *                                                                  *
-// * Neither the authors of this software system, nor their employing *
-// * institutes,nor the agencies providing financial support for this *
-// * work  make  any representation or  warranty, express or implied, *
-// * regarding  this  software system or assume any liability for its *
-// * use.  Please see the license in the file  LICENSE  and URL above *
-// * for the full disclaimer and the limitation of liability.         *
-// *                                                                  *
-// * This  code  implementation is the result of  the  scientific and *
-// * technical work of the GEANT4 collaboration.                      *
-// * By using,  copying,  modifying or  distributing the software (or *
-// * any work based  on the software)  you  agree  to acknowledge its *
-// * use  in  resulting  scientific  publications,  and indicate your *
-// * acceptance of all terms of the Geant4 Software license.          *
-// ********************************************************************
-//
-//
-/// \file B1/src/RunAction.cc
-/// \brief Implementation of the B1::RunAction class
+// Run action implementation
+// Nikita Mazotov, Yale Cubesat, 03/09/2025
 
 #include "RunAction.hh"
-
-#include "DetectorConstruction.hh"
-#include "PrimaryGeneratorAction.hh"
-
 #include "G4AccumulableManager.hh"
-#include "G4LogicalVolume.hh"
-#include "G4ParticleDefinition.hh"
-#include "G4ParticleGun.hh"
-#include "G4Run.hh"
 #include "G4RunManager.hh"
-#include "G4SystemOfUnits.hh"
-#include "G4UnitsTable.hh"
+#include <fstream>
 
 namespace B1
 {
 
-//....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
+// Mutex and global containers (shared across threads)
+G4Mutex RunAction::fAllHitsMutex = G4MUTEX_INITIALIZER;
+std::vector<std::tuple<G4double,G4double,G4double,G4double,G4double>> RunAction::fGlobalSiPMHits;
+std::vector<std::tuple<G4double,G4double,G4double,G4double,G4double>> RunAction::fGlobalMCHits;
+std::vector<std::tuple<G4double,G4double,G4double,G4double,G4double>> RunAction::fGlobalStepHits;
 
 RunAction::RunAction()
 {
-  // add new units for dose
-  //
-  const G4double milligray = 1.e-3 * gray;
-  const G4double microgray = 1.e-6 * gray;
-  const G4double nanogray = 1.e-9 * gray;
-  const G4double picogray = 1.e-12 * gray;
-
-  new G4UnitDefinition("milligray", "milliGy", "Dose", milligray);
-  new G4UnitDefinition("microgray", "microGy", "Dose", microgray);
-  new G4UnitDefinition("nanogray", "nanoGy", "Dose", nanogray);
-  new G4UnitDefinition("picogray", "picoGy", "Dose", picogray);
-
-  // Register accumulable to the accumulable manager
-  G4AccumulableManager* accumulableManager = G4AccumulableManager::Instance();
-  accumulableManager->RegisterAccumulable(fEdep);
-  accumulableManager->RegisterAccumulable(fEdep2);
+    auto* accumulableManager = G4AccumulableManager::Instance();
+    accumulableManager->RegisterAccumulable(fEdep);
 }
-
-//....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
 
 void RunAction::BeginOfRunAction(const G4Run*)
 {
-  // inform the runManager to save random number seed
-  G4RunManager::GetRunManager()->SetRandomNumberStore(false);
+    // Clear global hits at the start of a run
+    G4AutoLock lock(&fAllHitsMutex);
+    fGlobalStepHits.clear();
+    fGlobalSiPMHits.clear();
+    fGlobalMCHits.clear();
+    lock.unlock();
 
-  // reset accumulables to their initial values
-  G4AccumulableManager* accumulableManager = G4AccumulableManager::Instance();
-  accumulableManager->Reset();
+    auto* accumulableManager = G4AccumulableManager::Instance();
+    accumulableManager->Reset();
 }
 
-//....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
-
-void RunAction::EndOfRunAction(const G4Run* run)
+void RunAction::EndOfRunAction(const G4Run*)
 {
-  G4int nofEvents = run->GetNumberOfEvent();
-  if (nofEvents == 0) return;
+    auto* accumulableManager = G4AccumulableManager::Instance();
+    accumulableManager->Merge();  // merge thread-local accumulables
 
-  // Merge accumulables
-  G4AccumulableManager* accumulableManager = G4AccumulableManager::Instance();
-  accumulableManager->Merge();
+    G4cout << "[RunAction] EndOfRunAction: totals before writing: SiPM="
+           << fGlobalSiPMHits.size()
+           << " MC=" << fGlobalMCHits.size()
+           << " Step=" << fGlobalStepHits.size() << G4endl;
 
-  // Compute dose = total energy deposit in a run and its variance
-  //
-  G4double edep = fEdep.GetValue();
-  G4double edep2 = fEdep2.GetValue();
+    if (!IsMaster()) return;  // only master writes CSV
 
-  G4double rms = edep2 - edep * edep / nofEvents;
-  if (rms > 0.)
-    rms = std::sqrt(rms);
-  else
-    rms = 0.;
+    std::ofstream outFile("all_hits.csv");
+    outFile << "x,y,z,time,energy,type\n";
 
-  const auto detConstruction = static_cast<const DetectorConstruction*>(
-    G4RunManager::GetRunManager()->GetUserDetectorConstruction());
-  G4double mass = detConstruction->GetScoringVolume()->GetMass();
-  G4double dose = edep / mass;
-  G4double rmsDose = rms / mass;
+    // SiPM hits
+    if (fGlobalSiPMHits.empty()) {
+        outFile << "n/a,n/a,n/a,n/a,n/a,SiPM_EMPTY\n";
+    } else {
+        for (const auto& h : fGlobalSiPMHits)
+            outFile << std::get<0>(h) << "," << std::get<1>(h) << "," << std::get<2>(h)
+                    << "," << std::get<3>(h) << "," << std::get<4>(h) << ",SiPM\n";
+    }
 
-  // Run conditions
-  //  note: There is no primary generator action object for "master"
-  //        run manager for multi-threaded mode.
-  const auto generatorAction = static_cast<const PrimaryGeneratorAction*>(
-    G4RunManager::GetRunManager()->GetUserPrimaryGeneratorAction());
-  G4String runCondition;
-  if (generatorAction) {
-    const G4ParticleGun* particleGun = generatorAction->GetParticleGun();
-    runCondition += particleGun->GetParticleDefinition()->GetParticleName();
-    runCondition += " of ";
-    G4double particleEnergy = particleGun->GetParticleEnergy();
-    runCondition += G4BestUnit(particleEnergy, "Energy");
-  }
+    // MC hits
+    if (fGlobalMCHits.empty()) {
+        outFile << "n/a,n/a,n/a,n/a,n/a,MC_EMPTY\n";
+    } else {
+        for (const auto& h : fGlobalMCHits)
+            outFile << std::get<0>(h) << "," << std::get<1>(h) << "," << std::get<2>(h)
+                    << "," << std::get<3>(h) << "," << std::get<4>(h) << ",MC\n";
+    }
 
-  // Print
-  //
-  if (IsMaster()) {
-    G4cout << G4endl << "--------------------End of Global Run-----------------------";
-  }
-  else {
-    G4cout << G4endl << "--------------------End of Local Run------------------------";
-  }
+    // Step hits
+    if (fGlobalStepHits.empty()) {
+        outFile << "n/a,n/a,n/a,n/a,n/a,STEP_EMPTY\n";
+    } else {
+        for (const auto& h : fGlobalStepHits)
+            outFile << std::get<0>(h) << "," << std::get<1>(h) << "," << std::get<2>(h)
+                    << "," << std::get<3>(h) << "," << std::get<4>(h) << ",Step\n";
+    }
 
-  G4cout << G4endl << " The run consists of " << nofEvents << " " << runCondition << G4endl
-         << " Cumulated dose per run, in scoring volume : " << G4BestUnit(dose, "Dose")
-         << " rms = " << G4BestUnit(rmsDose, "Dose") << G4endl
-         << "------------------------------------------------------------" << G4endl << G4endl;
+    outFile.close();
+    G4cout << "[RunAction] All hits written, total SiPM hits: "
+           << fGlobalSiPMHits.size() << G4endl;
 }
-
-//....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
 
 void RunAction::AddEdep(G4double edep)
 {
-  fEdep += edep;
-  fEdep2 += edep * edep;
+    fEdep += edep;  // thread-safe via G4Accumulable
 }
 
-//....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
+void RunAction::MergeSiPMHits(const std::vector<std::tuple<G4double,G4double,G4double,G4double,G4double>>& hits)
+{
+    if (hits.empty()) {
+        G4cout << "[RunAction] MergeSiPMHits called with 0 hits (no-op)" << G4endl;
+        return;
+    }
+    G4AutoLock lock(&fAllHitsMutex);
+    size_t before = fGlobalSiPMHits.size();
+    fGlobalSiPMHits.insert(fGlobalSiPMHits.end(), hits.begin(), hits.end());
+    G4cout << "[RunAction] MergeSiPMHits: added " << hits.size()
+           << " hits (total now " << fGlobalSiPMHits.size() << ", before " << before << ")" << G4endl;
+}
 
-}  // namespace B1
+void RunAction::MergeMCHits(const std::vector<std::tuple<G4double,G4double,G4double,G4double,G4double>>& hits)
+{
+    if (hits.empty()) {
+        G4cout << "[RunAction] MergeMCHits called with 0 hits (no-op)" << G4endl;
+        return;
+    }
+    G4AutoLock lock(&fAllHitsMutex);
+    size_t before = fGlobalMCHits.size();
+    fGlobalMCHits.insert(fGlobalMCHits.end(), hits.begin(), hits.end());
+    G4cout << "[RunAction] MergeMCHits: added " << hits.size()
+           << " hits (total now " << fGlobalMCHits.size() << ", before " << before << ")" << G4endl;
+}
+
+void RunAction::MergeStepHits(const std::vector<std::tuple<G4double,G4double,G4double,G4double,G4double>>& hits)
+{
+    if (hits.empty()) {
+        G4cout << "[RunAction] MergeStepHits called with 0 hits (no-op)" << G4endl;
+        return;
+    }
+    G4AutoLock lock(&fAllHitsMutex);
+    size_t before = fGlobalStepHits.size();
+    // TEMPORARILY DISABLED TO AVOID HUGE FILES 
+    // ALSO BECAUSE IDK WHAT IT DOES
+    
+    //fGlobalStepHits.insert(fGlobalStepHits.end(), hits.begin(), hits.end());
+    //G4cout << "[RunAction] MergeStepHits: added " << hits.size()
+    //       << " hits (total now " << fGlobalStepHits.size() << ", before " << before << ")" << G4endl;
+}
+
+} // namespace B1

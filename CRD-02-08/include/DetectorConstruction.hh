@@ -48,10 +48,16 @@ class DetectorConstruction : public G4VUserDetectorConstruction
 
     G4VPhysicalVolume* Construct() override;
 
+    virtual void ConstructSDandField() override;
+
     G4LogicalVolume* GetScoringVolume() const { return fScoringVolume; }
 
   protected:
     G4LogicalVolume* fScoringVolume = nullptr;
+
+  private:
+    // Make logicDetector a class member to access in ConstructSDandField()
+    G4LogicalVolume* logicDetector = nullptr;
 };
 
 }  // namespace B1

@@ -41,14 +41,12 @@ namespace B1
 class EventAction;
 
 /// Stepping action class
-
 class SteppingAction : public G4UserSteppingAction
 {
   public:
     SteppingAction(EventAction* eventAction);
     ~SteppingAction() override = default;
 
-    // method from the base class
     void UserSteppingAction(const G4Step*) override;
 
   private:
@@ -57,7 +55,5 @@ class SteppingAction : public G4UserSteppingAction
 };
 
 }  // namespace B1
-
-//....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
 
 #endif

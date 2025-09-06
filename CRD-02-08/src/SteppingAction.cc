@@ -28,44 +28,50 @@
 /// \brief Implementation of the B1::SteppingAction class
 
 #include "SteppingAction.hh"
-
-#include "DetectorConstruction.hh"
 #include "EventAction.hh"
+#include "DetectorConstruction.hh"
 
-#include "G4Event.hh"
-#include "G4LogicalVolume.hh"
-#include "G4RunManager.hh"
 #include "G4Step.hh"
+#include "G4RunManager.hh"
+#include "G4LogicalVolume.hh"
+#include "G4SystemOfUnits.hh"
 
 namespace B1
 {
 
-//....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
-
-SteppingAction::SteppingAction(EventAction* eventAction) : fEventAction(eventAction) {}
-
-//....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
+SteppingAction::SteppingAction(EventAction* eventAction)
+    : fEventAction(eventAction),
+      fScoringVolume(nullptr) {}
 
 void SteppingAction::UserSteppingAction(const G4Step* step)
 {
-  if (!fScoringVolume) {
-    const auto detConstruction = static_cast<const DetectorConstruction*>(
-      G4RunManager::GetRunManager()->GetUserDetectorConstruction());
-    fScoringVolume = detConstruction->GetScoringVolume();
-  }
+    // Lazy initialization of scoring volume
+    if (!fScoringVolume) {
+        const auto detConstruction = static_cast<const DetectorConstruction*>(
+            G4RunManager::GetRunManager()->GetUserDetectorConstruction());
+        fScoringVolume = detConstruction->GetScoringVolume();
+    }
 
-  // get volume of the current step
-  G4LogicalVolume* volume =
-    step->GetPreStepPoint()->GetTouchableHandle()->GetVolume()->GetLogicalVolume();
+    G4LogicalVolume* volume =
+        step->GetPreStepPoint()->GetTouchableHandle()->GetVolume()->GetLogicalVolume();
 
-  // check if we are in scoring volume
-  if (volume != fScoringVolume) return;
+    if (volume != fScoringVolume) return;
 
-  // collect energy deposited in this step
-  G4double edepStep = step->GetTotalEnergyDeposit();
-  fEventAction->AddEdep(edepStep);
+    G4double edepStep = step->GetTotalEnergyDeposit();
+    fEventAction->AddEdep(edepStep);  // thread-local per event
+
+    auto pos  = step->GetPreStepPoint()->GetPosition();
+    auto time = step->GetPreStepPoint()->GetGlobalTime();
+
+    std::tuple<G4double,G4double,G4double,G4double,G4double> hit{
+        pos.x()/CLHEP::mm,
+        pos.y()/CLHEP::mm,
+        pos.z()/CLHEP::mm,
+        time/CLHEP::ns,
+        edepStep/CLHEP::eV
+    };
+
+    fEventAction->AddStepHit(hit);
 }
 
-//....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
-
-}  // namespace B1
+} // namespace B1

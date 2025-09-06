@@ -44,6 +44,8 @@
 #include "G4LogicalBorderSurface.hh"
 #include "G4SDManager.hh"
 #include "SiPMSD.hh"
+#include "G4LogicalVolumeStore.hh"
+
 
 namespace B1
 {
@@ -59,8 +61,20 @@ G4VPhysicalVolume* DetectorConstruction::Construct()
   G4double world_sizeY = 1.2 * env_sizeY;
   G4double world_sizeZ = 1.2 * env_sizeZ;
 
+  const G4int nEntries = 11;
+  G4double photonEnergy[nEntries] = {
+    2.431*eV, 2.480*eV, 2.530*eV, 2.583*eV, 2.638*eV,
+    2.696*eV, 2.755*eV, 2.818*eV, 2.883*eV, 2.952*eV, 3.024*eV
+  };
+
   G4Material* env_mat = nist->FindOrBuildMaterial("G4_Al");
   G4Material* world_mat = nist->BuildMaterialWithNewDensity("Vacuum", "G4_AIR", 3.8e-12 * kg / cm3);
+  G4MaterialPropertiesTable* mptWorld = new G4MaterialPropertiesTable();
+  G4double rindexVac[nEntries];
+  for (int i=0;i<nEntries;i++) rindexVac[i] = 1.0;
+  mptWorld->AddProperty("RINDEX", photonEnergy, rindexVac, nEntries);
+  world_mat->SetMaterialPropertiesTable(mptWorld);
+
 
   auto solidWorld = new G4Box("World", 0.5 * world_sizeX, 0.5 * world_sizeY, 0.5 * world_sizeZ);
   auto logicWorld = new G4LogicalVolume(solidWorld, world_mat, "World");
@@ -81,23 +95,18 @@ G4VPhysicalVolume* DetectorConstruction::Construct()
   G4double scint_Z = env_sizeZ - 14 * mm;
 
   G4MaterialPropertiesTable* mptScint = new G4MaterialPropertiesTable();
-  const G4int nEntries = 11;
-  G4double photonEnergy[nEntries] = {
-    2.431*eV, 2.480*eV, 2.530*eV, 2.583*eV, 2.638*eV,
-    2.696*eV, 2.755*eV, 2.818*eV, 2.883*eV, 2.952*eV, 3.024*eV
-  };
   G4double scintSpectrum[nEntries] = { 0.1, 0.2, 0.3, 0.42, 0.55, 0.7, 0.85, 1.0, 0.98, 0.7, 0.2 };
   G4double refractiveIndex[nEntries] = { 1.58, 1.58, 1.58, 1.58, 1.58, 1.58, 1.58, 1.58, 1.58, 1.58, 1.58 };
   G4double absLength[nEntries] = { 2*m, 2*m, 2*m, 2*m, 2*m, 2*m, 2*m, 2*m, 2*m, 2*m, 2*m };
 
-  mptScint->AddProperty("SCINTILLATIONCOMPONENT1", photonEnergy, scintSpectrum, nEntries);
-  mptScint->AddConstProperty("SCINTILLATIONYIELD", 10./MeV); // 10000./MeV but 10. for testing
-  mptScint->AddConstProperty("RESOLUTIONSCALE", 1.0);
-  mptScint->AddConstProperty("SCINTILLATIONTIMECONSTANT1", 2.1*ns);
-  mptScint->AddConstProperty("SCINTILLATIONYIELD1", 1.0);
-  mptScint->AddProperty("RINDEX", photonEnergy, refractiveIndex, nEntries);
-  mptScint->AddProperty("ABSLENGTH", photonEnergy, absLength, nEntries);
-  scint_mat->SetMaterialPropertiesTable(mptScint);
+ mptScint->AddProperty("FASTCOMPONENT", photonEnergy, scintSpectrum, nEntries, true);
+ mptScint->AddConstProperty("SCINTILLATIONYIELD", 10000./MeV);   // 100 photons/MeV for test, 10000 run 
+ mptScint->AddConstProperty("RESOLUTIONSCALE", 1.0);
+ mptScint->AddConstProperty("FASTTIMECONSTANT", 2.1*ns, true);
+ mptScint->AddConstProperty("YIELDRATIO", 1.0, true);                // all fast component
+ mptScint->AddProperty("RINDEX", photonEnergy, refractiveIndex, nEntries);
+ mptScint->AddProperty("ABSLENGTH", photonEnergy, absLength, nEntries);
+ scint_mat->SetMaterialPropertiesTable(mptScint);
 
   auto solidScint = new G4Box("Scintillator", 0.5 * scint_X, 0.5 * scint_Y, 0.5 * scint_Z);
   auto logicScint = new G4LogicalVolume(solidScint, scint_mat, "Scintillator");
@@ -119,17 +128,37 @@ G4VPhysicalVolume* DetectorConstruction::Construct()
 
   new G4LogicalSkinSurface("ScintPaintSurface", logicScint, paintSurface);
 
+/* TEMPORARILY DISABLED REFLECTIVE SURFACE
+  // --- Placeholder: attach a dummy surface with zero reflectivity ---
+  // This allows photons to freely exit the scintillator
+  auto dummySurface = new G4OpticalSurface("DummySurface");
+  dummySurface->SetType(dielectric_dielectric);
+  dummySurface->SetModel(unified);
+  dummySurface->SetFinish(polished);
+
+  auto dummyMPT = new G4MaterialPropertiesTable();
+  const G4int nDummy = 2;
+  G4double dummyEnergies[nDummy] = {2.0*eV, 3.5*eV};
+  G4double dummyReflectivity[nDummy] = {0.0, 0.0};  // fully transparent
+  dummyMPT->AddProperty("REFLECTIVITY", dummyEnergies, dummyReflectivity, nDummy);
+  dummySurface->SetMaterialPropertiesTable(dummyMPT);
+
+  // Apply dummy surface as a skin surface (optional)
+  new G4LogicalSkinSurface("ScintDummySurface", logicScint, dummySurface);
+*/
   // Detector definition
   G4Material* detector_mat = nist->FindOrBuildMaterial("G4_SILICON_DIOXIDE");
+  G4MaterialPropertiesTable* mptDet = new G4MaterialPropertiesTable();
+  G4double rindexSiO2[nEntries];
+  for (int i=0;i<nEntries;i++) rindexSiO2[i] = 1.46;   // typical fused silica
+  mptDet->AddProperty("RINDEX", photonEnergy, rindexSiO2, nEntries);
+  detector_mat->SetMaterialPropertiesTable(mptDet);
+
   G4double detector_thickness = 1.0 * mm;
   G4double detectorSide = 7 * mm;
   auto solidDetector = new G4Box("PhotonDetector", 0.5 * detectorSide, 0.5 * detectorSide, 0.5 * detector_thickness);
-  auto logicDetector = new G4LogicalVolume(solidDetector, detector_mat, "PhotonDetector");
+  logicDetector = new G4LogicalVolume(solidDetector, detector_mat, "PhotonDetector");
   logicDetector->SetVisAttributes(new G4VisAttributes(G4Colour(0.0, 0.0, 1.0, 0.5)));
-
-  auto sipmSD = new SiPMSD("SiPM_SD");
-  G4SDManager::GetSDMpointer()->AddNewDetector(sipmSD);
-  logicDetector->SetSensitiveDetector(sipmSD);
 
   G4double z_offset = 0.5 * scint_Z + 0.5 * detector_thickness;
   auto detectorPhys = new G4PVPlacement(nullptr, G4ThreeVector(0, 0, z_offset), logicDetector,
@@ -145,6 +174,11 @@ G4VPhysicalVolume* DetectorConstruction::Construct()
   G4double reflectivity[nPaint] = {0.0, 0.0};
   rpt->AddProperty("REFLECTIVITY", energiesPaint, reflectivity, nPaint);
   surface->SetMaterialPropertiesTable(rpt);
+/*
+  auto rpt = new G4MaterialPropertiesTable();
+  rpt->AddProperty("REFLECTIVITY", dummyEnergies, dummyReflectivity, nDummy);
+  surface->SetMaterialPropertiesTable(rpt);
+*/
 
   new G4LogicalBorderSurface("ScintToDetectorBorder", scintillatorPhys, detectorPhys, surface);
 
@@ -153,5 +187,36 @@ G4VPhysicalVolume* DetectorConstruction::Construct()
   fScoringVolume = logicScint;
   return physWorld;
 }
+
+// Multithreading sensetive detector construction
+void DetectorConstruction::ConstructSDandField()
+{
+  auto* sdMan = G4SDManager::GetSDMpointer();
+  sdMan->SetVerboseLevel(1);
+
+  // Create and register SD
+  auto* sipmSD = new SiPMSD("SiPM_SD");
+  sdMan->AddNewDetector(sipmSD);
+
+  G4cout << "[DetectorConstruction] Setting SiPM_SD on volume: "
+       << logicDetector->GetName() << G4endl;
+
+  // IMPORTANT: fetch the *thread-local* LV by name (not a stored pointer)
+  auto* detLV =
+      G4LogicalVolumeStore::GetInstance()->GetVolume("PhotonDetector");
+  if (!detLV) {
+    G4Exception("DetectorConstruction::ConstructSDandField",
+                "SiPM001", FatalException,
+                "Cannot find logical volume 'PhotonDetector' in LV store.");
+    return;
+  }
+
+  detLV->SetSensitiveDetector(sipmSD);
+
+  // Optional debug
+  G4cout << "[ConstructSDandField] Attached SiPM_SD to LV="
+         << detLV->GetName() << " @ " << detLV << G4endl;
+}
+
 
 } // namespace B1
